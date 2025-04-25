@@ -1,3 +1,25 @@
+/*
+ * Copyright 2024 John R Patek Sr
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 #ifndef _SUDOKU_HPP_
 #define _SUDOKU_HPP_
 
@@ -5,21 +27,17 @@
 #include <array>
 #include <execution>
 #include <functional>
+#include <list>
 #include <random>
 #include <set>
 #include <unordered_map>
 #include <string>
-
-#include <iostream>
-
-#define DEBUG(T) std::cerr << T << std::endl
 
 namespace sudoku
 {
     template <class ExecutionPolicy, class IteratorType, class RandomEngineType>
     IteratorType generate_solution(ExecutionPolicy &&policy, IteratorType first, IteratorType last, RandomEngineType &&random_engine)
     {
-        static const std::array<int, 9> fill_values = {1, 2, 3, 4, 5, 6, 7, 8, 9};
         static const auto set_value = [](const std::set<int> &set, int index)
         {
             std::set<int>::const_iterator it = set.cbegin();
@@ -29,43 +47,32 @@ namespace sudoku
             }
             return *it;
         };
-        static const auto apply_constraints = [&](std::set<int> &row, std::set<int> &column, std::set<int> &box)
+
+        static const auto initialize_grid = [](const std::array<int, 81> &grid, RandomEngineType &&random_engine)
         {
-            std::array<int, 18> row_column_union;
-            std::array<int, 27> row_column_box_union;
-            std::array<int, 9> constraints;
-            std::array<int, 9> possible_values;
-            std::array<int, 18>::iterator row_column_union_last = std::set_union(row.begin(), row.end(), column.begin(), column.end(), row_column_union.begin());
-            std::array<int, 27>::iterator row_column_box_union_last = std::set_union(row_column_union.begin(), row_column_union_last, box.begin(), box.end(), row_column_box_union.begin());
-            std::array<int, 9>::iterator constraints_last = std::unique_copy(row_column_box_union.begin(), row_column_box_union_last, constraints.begin());
-            std::array<int, 9>::iterator possible_values_last = std::set_difference(fill_values.begin(), fill_values.end(), constraints.begin(), constraints_last, possible_values.begin());
-            return std::set<int>(possible_values.begin(), possible_values_last);
+            
         };
+
+        static const auto initialize = [&](std::array<int, 81> &array, RandomEngineType &&random_engine)
+        {
+            const std::array<int, 9> fill_values = {1, 2, 3, 4, 5, 6, 7, 8, 9};
+            std::vector<std::pair<int, std::set<int>>> states;
+            return std::move(std::list<std::pair<int, std::set<int>>>(states.begin(),states.end()));
+        };
+
         static const auto compare_states = [](const std::pair<int, std::set<int>> &lhs, const std::pair<int, std::set<int>> &rhs)
         {
             return lhs.second.size() < rhs.second.size();
         };
         std::array<int, 81> grid;
-        std::vector<std::pair<int, std::set<int>>> states;
-        std::array<std::set<int>, 9> row_sets;
-        std::array<std::set<int>, 9> column_sets;
-        std::array<std::set<int>, 9> box_sets;
+        std::list<std::pair<int, std::set<int>>> states;
         std::uniform_int_distribution<int> random_int;
-        states.reserve(81);
+
+        // states.reserve(81);
 
         do
         {
-            grid.fill(0);
-            states.clear();
-            while (states.size() < states.capacity())
-            {
-                int state_index = static_cast<int>(states.size());
-                states.push_back(std::make_pair(state_index++, std::set<int>(fill_values.cbegin(), fill_values.cend())));
-            }
-            std::fill(policy, row_sets.begin(), row_sets.end(), std::set<int>());
-            std::fill(policy, column_sets.begin(), column_sets.end(), std::set<int>());
-            std::fill(policy, box_sets.begin(), box_sets.end(), std::set<int>());
-            std::shuffle(states.begin(), states.end(), random_engine);
+            states = initialize(grid, random_engine);
             bool filling(true);
             while (filling)
             {
@@ -76,16 +83,10 @@ namespace sudoku
                     const int target_row_index = min_state->first / 9;
                     const int target_column_index = min_state->first % 9;
                     const int target_box_index = (3 * (min_state->first / 27)) + ((min_state->first / 3) % 3);
-                    std::set<int> &target_row = row_sets[target_row_index];
-                    std::set<int> &target_column = column_sets[target_column_index];
-                    std::set<int> &target_box = box_sets[target_box_index];
                     if (!min_state->second.empty())
                     {
                         filling = true;
                         const int value = set_value(min_state->second, random_int(random_engine) % min_state->second.size());
-                        target_row.emplace(value);
-                        target_column.emplace(value);
-                        target_box.emplace(value);
                         grid[min_state->first] = value;
                         states.erase(min_state);
                         for (auto &state : states)
@@ -95,7 +96,7 @@ namespace sudoku
                             const int box_index = (3 * (state.first / 27)) + ((state.first / 3) % 3);
                             if (row_index == target_row_index || column_index == target_column_index || box_index == target_box_index)
                             {
-                                state.second = apply_constraints(row_sets[row_index], column_sets[column_index], box_sets[box_index]);
+                                state.second.erase(value);
                             }
                         }
                     }
@@ -110,6 +111,57 @@ namespace sudoku
     IteratorType generate_solution(IteratorType first, IteratorType last, RandomEngineType &&random_engine)
     {
         return generate_solution(std::execution::seq, first, last, random_engine);
+    }
+
+    template <int N, int... Rest>
+    struct array_impl
+    {
+        static constexpr auto &value = array_impl<N - 1, N, Rest...>::value;
+    };
+
+    template <int... Rest>
+    struct array_impl<0, Rest...>
+    {
+        static constexpr int value[] = {0, Rest...};
+    };
+
+    template <int... Rest>
+    constexpr int array_impl<0, Rest...>::value[];
+
+    template <int N>
+    struct array_initializer
+    {
+        static constexpr auto &value = array_impl<N>::value;
+
+        array_initializer() = delete;
+        array_initializer(const array_initializer &) = delete;
+        array_initializer(array_initializer &&) = delete;
+    };
+
+    template <class ExecutionPolicy, class SolutionIteratorType, class PuzzleIteratorType, class RandomEngineType>
+    PuzzleIteratorType generate_puzzle(ExecutionPolicy &&policy, SolutionIteratorType first, SolutionIteratorType last, PuzzleIteratorType dest, size_t unknowns, RandomEngineType &&random_engine)
+    {
+        static constexpr int indices[81] = array_initializer<80>::value;
+        std::array<int, 81> grid;
+        std::array<int, 81> masked;
+
+        std::copy_n(policy, first, 81, grid.begin());
+        auto masked_end = std::sample(std::begin(indices), std::end(indices), masked.begin(), unknowns, random_engine);
+        std::for_each(
+            masked.begin(),
+            masked_end,
+            [&](int index)
+            {
+                grid[index] = 0;
+            });
+
+        return std::copy(policy, grid.begin(), grid.end(), dest);
+    }
+
+    template <class SolutionIteratorType, class PuzzleIteratorType, class RandomEngineType>
+    PuzzleIteratorType generate_puzzle(SolutionIteratorType first, SolutionIteratorType last, PuzzleIteratorType dest, size_t unknowns, RandomEngineType &&random_engine)
+    {
+        return generate_puzzle(std::execution::seq, first, last, dest, unknowns, random_engine);
     }
 }
 
